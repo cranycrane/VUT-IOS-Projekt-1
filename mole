@@ -1,0 +1,458 @@
+#!/bin/sh
+# IOS Projekt 1
+# FIT VUT
+# xjerab28, Jakub Jeřábek, 1BIT
+# 10.3.2023
+
+
+export POSIXLY_CORRECT=yes
+export LC_ALL=C
+
+# Zkontrolujeme, zda proměnná MOLE_RC existuje
+if [ -z "$MOLE_RC" ]; then
+    echo "Chyba: proměnná MOLE_RC není nastavena."
+    exit 1
+fi
+
+# Zkontrolujeme, zda soubor na dané cestě existuje
+if [ ! -e "$MOLE_RC" ]; then
+    # Pokud soubor neexistuje, vytvoříme cestu i soubor
+    mkdir -p "$(dirname "$MOLE_RC")"
+    touch "$MOLE_RC"
+fi
+
+# Nastaveni editoru
+if [ -n "$EDITOR" ]; then
+  export EDITOR="$EDITOR"
+elif [ -n "$VISUAL" ]; then
+  export EDITOR="$VISUAL"
+else
+  export EDITOR="nano"
+fi
+
+help(){
+    fmt="%-40s %-30s\n"
+    printf "Skript Mole version 0.2.1, wrapper nad textovymi soubory\n\n"
+    printf "%-40s %-30s\n" "příkaz" "popis příkazu"
+    printf "_________________________________________________________\n"
+    printf "%-40s %-30s\n" "./mole.sh -h" "zobrazi napovedu"
+    printf "%-40s %-30s\n" "./mole.sh [-g GROUP] FILE" "Otevre zadany soubor.  Pokud byl zadan prepinac -g," 
+    printf "%-40s %-30s\n" "" "otevreny soubor bude prirazen do skupiny GROUP"
+    printf "%-40s %-30s\n" "./mole.sh [-m] [FILTERS] [DIRECTORY]" "Otevre soubor z adresare DIRECTORY podle FILTERS"
+    printf "%-40s %-30s\n" "./mole.sh list [FILTERS] [DIRECTORY]" "Zobrazi seznam souboru, ktere v DIRECTORY byly editovany"
+}   
+about() {
+    printf "Skript Mole v 3.0, wrapper nad textovymi soubory\n"
+    printf "Vytvoren jako projekt pro predmet IOS na FIT VUT Brno\n"
+    printf "Autor: Jakub Jerabek, xlogin: xjerab28, 1BIT\n"
+    printf "Verze: 3.0 STABLE BETA, 10.3.2023\n"
+
+}
+
+open_file() {
+    filename=$(basename "$dirpath")
+    dirpath=$(dirname "$dirpath")
+
+    # Vytvoreni zaznamu
+    echo "$filename;$dirpath;$group;$date;" >> "$MOLE_RC"    
+
+    if [ -f "$filename" ]; then # Pokud soubor existuje, otevru
+        "$EDITOR" "$dirpath"/"$filename"
+    elif [ ! -f "$filename" ]; then # Pokud soubor neexistuje, vytvorim a otevru
+        "$EDITOR" "$dirpath"/"$filename"
+    fi
+    exit 0  
+}
+ # Najit posledne upravovany soubor ve slozce DONE
+directory_open_last() {
+    # Vypise vsechny soubory ktere se nachazi ve slozce a vezme posledni vypsany, zaroven kontroluje, zda existuje
+    while [ ! -f "$dirpath/$filename" ] && [ -n "$files" ]; do
+        file=$(echo "$files" |  tail -1)
+        files=$(echo "$files" | sed '$d')
+        filename=$(echo "$file" | cut -d ';' -f 1)
+        dirpath=$(echo "$file" | cut -d ';' -f 2)
+        if [ -e "$dirpath/$filename" ]; then
+            break
+        fi
+    done
+    files=$file
+}
+
+# Najde nejcasteji otvirany soubor v danem umisteni TODO
+find_most() {
+    #files=$(echo "$files" | sort | uniq -c | sort -rn | head -n 1 | awk '{print $2}')
+ while [ ! -f "$dirpath/$filename" ] && [ -n "$files" ]; do
+    file=$(echo "$files" | awk -F ';' '{
+        count[$1]++; record[count[$1]]=$0
+        }
+        END {
+        max=0; 
+        for (file in count) 
+           if (count[file] >= max) {
+                max=count[file]; most=file
+            }; 
+        print record[count[most]]}')
+    filename=$(echo "$file" | cut -d ';' -f 1)
+    dirpath=$(echo "$file" | cut -d ';' -f 2)
+    if [ -e "$dirpath/$filename" ]; then
+        break
+    fi
+    files=$(echo "$files" | grep -v "$file")
+ done
+    files=$file
+}
+
+date_a_compare() {
+
+    # Rozdělení data na jednotlivé části
+    year=$(echo "$date_af" | awk -F '-' '{print $1}')
+    month=$(echo "$date_af" | awk -F '-' '{print $2}')
+    day=$(echo "$date_af" | awk -F '-' '{print $3}')
+
+    files=$(echo "$files" | awk -F ';' -v year_a="$year" -v month_a="$month" -v day_a="$day" '{
+
+    split($4, date_parts, "_")
+    split(date_parts[1], date, "-")
+
+    year = date[1]
+    month = date[2]
+    day = date[3]
+
+    # Porovnání jednotlivých částí data
+    if (year > year_a || (year == year_a && month > month_a) || (year == year_a && month == month_a && day > day_a)) {
+        print $1";"$2";"$3";"$4
+    }
+    }')
+}
+
+date_b_compare() {
+
+    # Rozdělení data na jednotlivé části
+    year=$(echo "$date_bef" | awk -F '-' '{print $1}')
+    month=$(echo "$date_bef" | awk -F '-' '{print $2}')
+    day=$(echo "$date_bef" | awk -F '-' '{print $3}')
+
+    #echo "$day"
+    files=$(echo "$files" | awk -F ';' -v year_b="$year" -v month_b="$month" -v day_b="$day" '{
+
+    split($4, date_parts, "_")
+    split(date_parts[1], date, "-")
+
+    year = date[1]
+    month = date[2]
+    day = date[3]
+
+    # Porovnání jednotlivých částí data
+    if (year < year_b || (year == year_b && month < month_b) || (year == year_b && month == month_b && day < day_b)) {
+        print $1";"$2";"$3";"$4
+    }
+    }')
+    #echo "$files"
+}
+
+find_groups() {
+
+        group=$(echo "$group" | tr "," "|")
+        files=$(echo "$files" | awk -F ';' -v r="$group" '{if(match($3, r)){print $1";"$2";"$3";"$4}}' ORS="\n")
+
+}
+# Filtruji soubory se slozky
+filter_directory() {
+    # Zkontroluje, zda slozka existuje
+    if [ ! -d "$dirpath" ]; then
+        echo "Chyba: Slozka neexistuje"
+        exit 1
+    fi
+    # Vyfiltruji soubory ze slozky
+    files=$(awk -F ';' -v dir="$dirpath" '{if($2 == dir){print $1";"$2";"$3";"$4";"}}' "$MOLE_RC" ORS="\n")
+
+    # Vyfiltruji podle datumu -after
+    if [ -n "$date_af" ]; then
+        date_a_compare
+    fi
+
+    # Vyfiltruji podle datumu -before
+    if [ -n "$date_bef" ]; then
+        date_b_compare
+    fi
+
+    # Tak znova skupiny
+    if [ -n "$group" ]; then
+        find_groups
+    fi
+    # Vyfiltruji posledni upraveny soubor, pokud neni prepinac -m
+    if [ "$most_used" = false ]; then
+
+        directory_open_last
+    else
+    # Nebo vyfiltruji nejcasteji upravovany soubor, pokud je prepinac -m
+        find_most
+    fi
+
+    if [ -z "$files" ]; then
+        echo "Chyba, zadny soubor nenalezen"
+        exit 1
+    fi
+
+    # Zkontrolujeme, zda soubor existuje, popripade vezmeme dalsi
+    #echo "$files"
+    # Vytvoreni zaznamu
+    echo "$filename;$dirpath;;$date;" >> "$MOLE_RC"
+
+    "$EDITOR" "$dirpath"/"$filename"
+    exit 0
+}
+
+list_directory() {
+# pokud je první argument "list", zpracujeme další argumenty
+
+    shift # posuneme se na další argument
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -g)
+                # zpracování argumentu -g - skupinz
+                shift 
+                group="$1" 
+                ;;
+            -a) # zpracovani date_after 
+                shift
+                date_af="$1"
+                ;;
+            -b) # zpracovani date_before
+                shift
+                date_bef="$1"
+                ;;
+            *) # zpracovani umisteni
+                # Slozka, zkontroluji, zda existuje
+                dirpath=$(realpath "$1")
+                ;;
+        esac
+        shift # posuneme se na další argument
+    done
+
+    # Neni zadana slozka, pracujeme v aktualni
+    if [ -z "$dirpath" ]; then
+        dirpath=$PWD
+    fi
+    # Zkontroluje, zda slozka existuje
+    if [ ! -d "$dirpath" ]; then
+        echo "Chyba: Slozka neexistuje"
+        exit 1
+    fi
+
+    #echo "$dirpath"   
+    # Vyfiltruji soubory ze slozky
+    files=$(awk -F ';' -v dir="$dirpath" '{if($2 == dir){print $1";"$2";"$3";"$4";"}}' "$MOLE_RC")
+
+
+    # Vyfiltruji podle datumu -after
+    if [ -n "$date_af" ]; then
+        date_a_compare
+    fi
+
+    # Vyfiltruji podle datumu -before
+    if [ -n "$date_bef" ]; then
+        date_b_compare
+    fi
+    # Tak znova skupiny
+    if [ -n "$group" ]; then
+        find_groups
+    fi
+
+
+    if [ -z "$files" ]; then
+        echo ""
+        exit 1
+    fi
+
+    # výpis souborů podle skupin
+    files=$(echo "$files" | awk -F ";" '
+{
+  if ($1 in files) {
+    if ($3 != "") {
+      if (groups[$1] != "" && index(groups[$1], $3) == 0) {
+        groups[$1] = groups[$1] "," $3
+      } else {
+        groups[$1] = $3
+      }
+    }
+  } else {
+    files[$1] = 1
+    if ($3 != "") {
+      groups[$1] = $3
+    }
+
+  }
+}
+END {
+  for (file in files) {
+    if (length(groups[file]) == 0) {
+        groups[file] = "-"
+    }
+    printf "%s:;%s\n", file, groups[file]
+
+  }
+}' | column -t -s ";" -o " " | sort -t ':' -k1 -fd )
+
+    echo "$files"
+    exit 0
+}
+
+filter_secret() {
+
+
+        # Vyfiltruji soubory ze slozky
+        if [ -n "$dirpath" ]; then
+            dirpath=$(realpath "$dirpath")
+            files=$(awk -F ';' -v dir="$dirpath" '{if($2 == dir){print $1";"$2";"$3";"$4";"}}' "$MOLE_RC")
+        else
+            files=$(awk -F ';' '{print $1";"$2";"$3";"$4";"}' "$MOLE_RC")
+        fi
+        # Vyfiltruji podle datumu -after
+        if [ -n "$date_af" ]; then
+            date_a_compare
+        fi
+
+        # Vyfiltruji podle datumu -before
+        if [ -n "$date_bef" ]; then
+            date_b_compare
+        fi
+    # Seradim zaznam na FILEPATH;DATE
+    files=$(echo "$files" | awk -F ';' '{print $2"/"$1";"$4}')
+    # Duplicitni zaznamy souboru sjednotim s datumy a abecedne seradim
+    files=$(echo "$files" | awk -F ";" '{
+          # Pokud se soubor již nachází v poli, přidáme skupinu pouze pokud již není v poli
+          if ($1 in groups && index(groups[$1], $2) == 0) {
+            groups[$1] = groups[$1] ";" $2
+          }
+          # Pokud soubor nemá přidělenou žádnou skupinu, nahradíme ji znakem "-"
+          else if ($2 == " ") {
+            groups[$1] = " -"
+          }
+          # Jinak přidáme soubor a jeho skupinu do odpovídajících polí
+          else {
+            groups[$1] = $2
+          }
+        } END {
+          # Projdeme pole souborů a vytiskneme každý s jeho skupinami
+          for (file in groups) {
+            print file ";" groups[file]
+          }
+        }' | sort -t ';' -k1 -fd )
+        
+    if [ "$files" = "/;" ]; then
+        files=""
+    fi
+
+    echo "$files" >> "$LOGFILE"
+}
+
+# TODO: Pokud neni zadany adresar, tajny log bude obsahovat vsechny zaznamy
+secret_log() {
+
+    # Zkontroluji existenci .mole slozky
+    if [ ! -d "$HOME/.mole" ]; then
+        mkdir "$HOME"/.mole
+    fi
+    LOGFILE="$HOME"/.mole/log_"$USER"_"$date"
+    touch "$LOGFILE"
+    while [ $# -gt 0 ]; do
+        shift # posuneme se na další argument
+        case "$1" in
+            -a) # zpracovani date_after 
+                shift
+                date_af="$1"
+                ;;
+            -b) # zpracovani date_before
+                shift
+                date_bef="$1"
+                ;;
+            *)
+                 # zpracování adresářů
+                while [ $# -gt 0 ]; do
+                    dirpath="$1"
+                    filter_secret # provedete akce na proměnné $dirpath
+                    shift
+                done
+                ;;
+        esac
+    done
+    if [ -z "$dirpath" ]; then
+    filter_secret
+    fi
+
+    bzip2 -z "$HOME"/.mole/log_"$USER"_"$date"
+    exit 0
+}
+################################################
+#                     MAIN                     #
+################################################
+date=$(date "+%Y-%m-%d_%H-%M-%S")
+# Testing date:
+#date=$($BINSLOZKA/testdate "+%Y-%m-%d_%H-%M-%S")
+
+group=""
+most_used=false
+date_af=""
+date_bef=""
+
+
+if [ "$1" = "list" ]; then
+    list_directory "$@"
+    exit 0
+elif [ "$1" = "secret-log" ]; then
+    secret_log "$@"
+    exit 0
+elif [ "$1" = "-about" ]; then
+    about
+    exit 0
+fi
+
+# Ziskame prepinace
+while getopts "hg:ma:b:" opt
+do  case "$opt" in
+    h)
+        help
+        exit 0
+        ;;
+    g)
+        group=$OPTARG
+        ;;
+    m)
+        most_used=true
+        ;;
+    a)
+        date_af=$OPTARG
+        ;;
+    b)
+        date_bef=$OPTARG
+        ;;
+    *)
+        echo "Chybny prepinac"
+        exit 1
+        ;;
+    esac
+done
+
+shift $(($OPTIND - 1))
+# Zjistime, zda byla zadana slozka
+if [ $# -gt 0 ]; then
+    dirpath=$(realpath "$1")
+else
+    dirpath="$PWD"
+fi
+# Pokud neni zadan zadny dalsi argument, otvira se soubor v momentalni slozce
+if [  "$dirpath" = "$PWD" ]; then
+    filter_directory
+    exit 0
+elif [ -d "$dirpath" ]; then # Pokud je zadana slozka, filtrujeme
+    filter_directory
+    exit 0
+elif [ "$most_used" = true ] || [ -n "$date_af" ] || [ -n "$date_bef" ]; then
+    echo "Chyba: zadana slozka neexistuje"
+    exit 1
+else # Pokud je zadany soubor, otvirame a prirazujeme skupinu
+    open_file   
+    exit 0
+fi
+
