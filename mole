@@ -27,7 +27,7 @@ if [ -n "$EDITOR" ]; then
 elif [ -n "$VISUAL" ]; then
   export EDITOR="$VISUAL"
 else
-  export EDITOR="nano"
+  export EDITOR="vi"
 fi
 
 help(){
@@ -45,7 +45,7 @@ about() {
     printf "Skript Mole v 3.0, wrapper nad textovymi soubory\n"
     printf "Vytvoren jako projekt pro predmet IOS na FIT VUT Brno\n"
     printf "Autor: Jakub Jerabek, xlogin: xjerab28, 1BIT\n"
-    printf "Verze: 3.0 STABLE BETA, 10.3.2023\n"
+    printf "Verze: 3.0 STABLE, 23.3.2023\n"
 
 }
 
